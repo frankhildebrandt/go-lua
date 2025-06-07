@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"regexp"
 	"strings"
 	"unicode"
 )
@@ -141,6 +142,81 @@ func formatHelper(l *State, fs string, argCount int) string {
 	return b.String()
 }
 
+func matchHelper(l *State) int {
+	s := CheckString(l, 1)
+	p := CheckString(l, 2)
+	start := relativePosition(OptInteger(l, 3, 1), len(s)) - 1
+	if start < 0 || start >= len(s) {
+		l.PushNil()
+		return 1
+	}
+	substr := s[start:]
+	re, err := regexp.Compile(p)
+	if err != nil {
+		Errorf(l, "invalid pattern: %s", err.Error())
+	}
+	matches := re.FindStringSubmatch(substr)
+	if len(matches) == 0 {
+		l.PushNil()
+		return 1
+	}
+	for _, m := range matches[1:] {
+		l.PushString(m)
+	}
+	return len(matches) - 1
+}
+
+func gsubHelper(l *State) int {
+	s := CheckString(l, 1)
+	p := CheckString(l, 2)
+	repl := CheckString(l, 3)
+	n := OptInteger(l, 4, -1)
+
+	re, err := regexp.Compile(p)
+	if err != nil {
+		Errorf(l, "invalid pattern: %s", err.Error())
+	}
+
+	count := 0
+	result := re.ReplaceAllStringFunc(s, func(m string) string {
+		if n >= 0 && count >= n {
+			return m
+		}
+		count++
+		return repl
+	})
+
+	l.PushString(result)
+	l.PushInteger(count)
+	return 2
+}
+
+func gmatchHelper(l *State) int {
+	s := CheckString(l, 1)
+	p := CheckString(l, 2)
+
+	re, err := regexp.Compile(p)
+	if err != nil {
+		Errorf(l, "invalid pattern: %s", err.Error())
+	}
+
+	matches := re.FindAllStringSubmatchIndex(s, -1)
+	index := 0
+
+	l.PushGoFunction(func(l *State) int {
+		if index >= len(matches) {
+			l.PushNil()
+			return 1
+		}
+		start, end := matches[index][0], matches[index][1]
+		l.PushString(s[start:end])
+		index++
+		return 1
+	})
+
+	return 1
+}
+
 var stringLibrary = []RegistryFunction{
 	{"byte", func(l *State) int {
 		s := CheckString(l, 1)
@@ -181,11 +257,12 @@ var stringLibrary = []RegistryFunction{
 		l.PushString(formatHelper(l, CheckString(l, 1), l.Top()))
 		return 1
 	}},
-	// {"gmatch", ...},
-	// {"gsub", ...},
+	{"match", func(l *State) int { return matchHelper(l) }},
+	{"gsub", func(l *State) int { return gsubHelper(l) }},
+	{"gmatch", func(l *State) int { return gmatchHelper(l) }},
 	{"len", func(l *State) int { l.PushInteger(len(CheckString(l, 1))); return 1 }},
 	{"lower", func(l *State) int { l.PushString(strings.ToLower(CheckString(l, 1))); return 1 }},
-	// {"match", ...},
+
 	{"rep", func(l *State) int {
 		s, n, sep := CheckString(l, 1), CheckInteger(l, 2), OptString(l, 3, "")
 		if n <= 0 {
