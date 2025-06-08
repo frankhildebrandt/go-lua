@@ -1,7 +1,4 @@
-module github.com/frankhildebrandt/go-lua
+module github.com/Shopify/go-lua
 
 go 1.22
 
-replace (
-	github.com/Shopify/go-lua => github.com/frankhildebrandt/go-lua v0.0.3
-)
